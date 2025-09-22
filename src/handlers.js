@@ -5,6 +5,37 @@ const utils = require('./utils');
 // --- handleButton ---
 async function handleButton(interaction, client, env) {
     console.log(`handleButton called for customId='${interaction.customId}'`);
+    // مدیریت دکمه تاریخچه نام
+    if (interaction.customId.startsWith('namehistory_')) {
+        const uuid = interaction.customId.replace('namehistory_', '');
+        try {
+            const { EmbedBuilder } = require('discord.js');
+            const nameHistory = await utils.getNameHistory(uuid);
+            if (nameHistory && nameHistory.length > 0) {
+                const historyEmbed = new EmbedBuilder()
+                    .setColor(0x2ecc71)
+                    .setTitle('📜 تاریخچه نام‌های کاربری')
+                    .setDescription(nameHistory.map((entry, index) => 
+                        `${index + 1}. \`${entry.name}\`${entry.changedToAt ? ` - <t:${Math.floor(entry.changedToAt/1000)}:R>` : ' (Original)'}`
+                    ).join('\n'))
+                    .setFooter({ text: `UUID: ${uuid}` });
+                await interaction.reply({ embeds: [historyEmbed], ephemeral: true });
+            } else {
+                await interaction.reply({ 
+                    content: '❌ تاریخچه نام‌ها یافت نشد.',
+                    ephemeral: true 
+                });
+            }
+        } catch (error) {
+            console.error('Error handling name history button:', error);
+            await interaction.reply({ 
+                content: '❌ خطا در دریافت تاریخچه نام‌ها',
+                ephemeral: true 
+            });
+        }
+        return;
+    }
+
     // --- شرکت در گیووای ---
     if (interaction.customId === 'join_giveaway') {
         // پیدا کردن گیووای فعال بر اساس آیدی پیام
@@ -263,6 +294,43 @@ async function handleButton(interaction, client, env) {
 
 // --- handleSelectMenu ---
 async function handleSelectMenu(interaction, client, env) {
+    if (interaction.customId === 'select_capes') {
+        try {
+            await interaction.deferReply({ ephemeral: false });
+            // دریافت اطلاعات کاربر و uuid از دستور قبلی (در صورت نیاز می‌توان uuid را در customId یا message ذخیره کرد)
+            // فرض: uuid و username را از message یا interaction.options بگیریم
+            const username = interaction.message.embeds[0]?.fields?.find(f => f.name.includes('نام کاربری'))?.value?.replace(/[`>\s]/g, '') || 'Unknown';
+            // اگر uuid را ذخیره نکردی، باید از username دوباره بگیریم
+            let uuid = null;
+            try {
+                const mojangData = await utils.getMojangData(username);
+                uuid = mojangData?.id;
+            } catch {}
+            if (!uuid) {
+                return await interaction.editReply({ content: '❌ خطا در دریافت uuid کاربر.', ephemeral: false });
+            }
+            // لیست کیپ‌های انتخابی
+            const selectedCapes = interaction.values;
+            // اطلاعات هایپیکسل (اختیاری)
+            let hypixelStats = {};
+            try {
+                hypixelStats = await utils.getHypixelData(uuid, process.env.HYPIXEL_API_KEY);
+            } catch {}
+            // رندر تصویر با کیپ‌های انتخابی
+            const buffer = await utils.createProfileImage({ uuid, username, capeUrls: selectedCapes });
+            // ارسال تصویر به صورت عمومی
+            await interaction.editReply({
+                content: `تصویر پروفایل با کیپ‌های انتخابی برای ${username}:`,
+                files: [{ attachment: buffer, name: 'profile.png' }],
+                embeds: [],
+                components: []
+            });
+        } catch (e) {
+            console.error('Error in select_capes handler:', e);
+            await interaction.editReply({ content: '❌ خطا در ساخت تصویر پروفایل.', ephemeral: false });
+        }
+        return;
+    }
     const { customId, values, user, guild } = interaction;
     const db = require('./database');
     const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder } = require('discord.js');
@@ -349,96 +417,76 @@ async function handleModal(interaction, client, env) {
     if (customId.startsWith('sendmessage_modal_')) {
         await interaction.deferReply({ flags: 64 });
 
-        const parts = customId.split('_');
-        const targetId = parts[2];
-        const useEmbed = parts[3] === 'true';
-        const color = parts[4] || 'Blue';
-        const text = fields.getTextInputValue('message_text');
-        const embedTitle = useEmbed ? (fields.getTextInputValue('embed_title') || null) : null;
-
-        // Color presets
-        const colorMap = {
-            Blue: 0x3498db,
-            Green: 0x2ecc71,
-            Red: 0xe74c3c,
-            Yellow: 0xf1c40f,
-            Orange: 0xe67e22,
-            Purple: 0x9b59b6,
-            Grey: 0x95a5a6
-        };
-        const embedColor = colorMap[color] || colorMap['Blue'];
-
         try {
-            if (targetId === user.id) {
-                try {
-                    if (useEmbed) {
-                        const embed = new EmbedBuilder()
-                            .setColor(embedColor)
-                            .setDescription(text)
-                            .setFooter({ text: `ارسال شده توسط ${interaction.user.tag} از سرور ${guild.name}` })
-                            .setTimestamp();
-                        
-                        if (embedTitle) {
-                            embed.setTitle(embedTitle);
-                        }
+            const parts = customId.split('_');
+            const targetId = parts[2];
+            const useEmbed = parts[3] === 'true';
+            const color = parts[4] || 'Blue';
+            const text = fields.getTextInputValue('message_text');
+            const embedTitle = useEmbed ? (fields.getTextInputValue('embed_title') || null) : null;
 
-                        await user.send({ embeds: [embed] });
-                    } else {
-                        await user.send(text);
-                    }
+            // Color presets
+            const colorMap = {
+                Blue: 0x3498db,
+                Green: 0x2ecc71,
+                Red: 0xe74c3c,
+                Yellow: 0xf1c40f,
+                Orange: 0xe67e22,
+                Purple: 0x9b59b6,
+                Grey: 0x95a5a6
+            };
+            const embedColor = colorMap[color] || colorMap['Blue'];
 
-                    const successEmbed = new EmbedBuilder()
-                        .setColor('Green')
-                        .setDescription(`✅ پیام با موفقیت به <@${targetId}> ارسال شد.`);
-                    await interaction.editReply({ embeds: [successEmbed] });
-
-                    await logAction(guild, `📩 ${interaction.user.tag} به کاربر پیام ارسال کرد.`);
-
-                } catch (dmError) {
-                    const errorEmbed = new EmbedBuilder()
-                        .setColor('Red')
-                        .setDescription(`❌ امکان ارسال DM به کاربر وجود ندارد.`);
-                    await interaction.editReply({ embeds: [errorEmbed] });
+            // Create message content
+            let messageContent;
+            if (useEmbed) {
+                const embed = new EmbedBuilder()
+                    .setColor(embedColor)
+                    .setDescription(text)
+                    .setFooter({ text: `ارسال شده توسط ${interaction.user.tag} از سرور ${guild.name}` })
+                    .setTimestamp();
+                
+                if (embedTitle) {
+                    embed.setTitle(embedTitle);
                 }
+                messageContent = { embeds: [embed] };
             } else {
-                const targetChannel = guild.channels.cache.get(targetId);
-                if (!targetChannel) {
-                    const errorEmbed = new EmbedBuilder()
-                        .setColor('Red')
-                        .setDescription('❌ چنل مورد نظر یافت نشد.');
-                    return interaction.editReply({ embeds: [errorEmbed] });
-                }
-
-                if (useEmbed) {
-                    const embed = new EmbedBuilder()
-                        .setColor(embedColor)
-                        .setDescription(text)
-                        .setFooter({ text: `ارسال شده توسط ${interaction.user.tag}` })
-                        .setTimestamp();
-                    
-                    if (embedTitle) {
-                        embed.setTitle(embedTitle);
-                    }
-
-                    await targetChannel.send({ embeds: [embed] });
-                } else {
-                    await targetChannel.send(text);
-                }
-
-                const successEmbed = new EmbedBuilder()
-                    .setColor('Green')
-                    .setDescription(`✅ پیام با موفقیت در <#${targetId}> ارسال شد.`);
-                await interaction.editReply({ embeds: [successEmbed] });
-
-                await logAction(guild, `📤 ${interaction.user.tag} پیامی در ${targetChannel.name} ارسال کرد.`);
+                messageContent = { content: text };
             }
 
+            // Try to send to user first
+            const target = await interaction.client.users.fetch(targetId).catch(() => null);
+            
+            if (target) {
+                try {
+                    await target.send(messageContent);
+                    await interaction.editReply({ 
+                        content: `✅ پیام با موفقیت به کاربر ${target.tag} ارسال شد.`, 
+                        flags: 64 
+                    });
+                    await logAction(guild, `📩 ${interaction.user.tag} پیامی به کاربر ${target.tag} ارسال کرد.`);
+                } catch (dmError) {
+                    throw new Error('امکان ارسال پیام خصوصی به این کاربر وجود ندارد. ممکن است DM کاربر بسته باشد.');
+                }
+            } else {
+                // If not a user, try to send to channel
+                const channel = await interaction.client.channels.fetch(targetId);
+                if (!channel) {
+                    throw new Error('مقصد پیام یافت نشد. لطفاً مطمئن شوید که آیدی کاربر یا چنل درست است.');
+                }
+                await channel.send(messageContent);
+                await interaction.editReply({ 
+                    content: `✅ پیام با موفقیت در کانال ${channel.name} ارسال شد.`, 
+                    flags: 64 
+                });
+                await logAction(guild, `📩 ${interaction.user.tag} پیامی در کانال ${channel.name} ارسال کرد.`);
+            }
         } catch (error) {
-            console.error('Error sending message:', error);
-            const errorEmbed = new EmbedBuilder()
-                .setColor('Red')
-                .setDescription('❌ خطا در ارسال پیام. ممکن است دسترسی کافی نداشته باشم.');
-            await interaction.editReply({ embeds: [errorEmbed] });
+            console.error('Error in sendmessage modal:', error);
+            await interaction.editReply({ 
+                content: `❌ خطا در ارسال پیام: ${error.message}`, 
+                flags: 64 
+            });
         }
     }
 }

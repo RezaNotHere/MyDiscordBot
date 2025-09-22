@@ -78,11 +78,6 @@ client.on(Events.GuildBanAdd, async ban => {
 client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.guild) return;
     try {
-        // The events.onInteractionCreate is now only for non-command interactions.
-        if (events.onInteractionCreate && !interaction.isChatInputCommand()) {
-            await events.onInteractionCreate(interaction, client, env);
-        }
-
         // Centralized command and component handling
         if (interaction.isChatInputCommand()) {
             await commands.handleSlashCommand(interaction, client, env);
@@ -90,12 +85,16 @@ client.on(Events.InteractionCreate, async interaction => {
             // Skip specific buttons to prevent duplicate processing if handled elsewhere
             if (interaction.customId.startsWith('confirm_send_') || interaction.customId.startsWith('cancel_send_')) {
                 // Assuming these are handled in handleButton or another specific handler
+                return;
             }
             await handlers.handleButton(interaction, client, env);
         } else if (interaction.isStringSelectMenu()) {
             await handlers.handleSelectMenu(interaction, client, env);
         } else if (interaction.isModalSubmit()) {
             await handlers.handleModal(interaction, client, env);
+        } else if (events.onInteractionCreate) {
+            // Handle any other types of interactions
+            await events.onInteractionCreate(interaction, client, env);
         }
     } catch (error) {
         console.error("Interaction handling error:", error);

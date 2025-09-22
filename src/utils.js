@@ -1,19 +1,86 @@
-
 // --- Commands Array (must be defined before any use!) ---
 const commands = [];
 // --- Bad Words List (in-memory, can be persisted to db if needed) ---
 
-// Minecraft/Hypixel API & Utility Functions
-const axios = require('axios');
+// ...existing code...
 
+function createCosmeticEmbed(username, uuid, cosmeticCapes, cosmetics, page, EmbedBuilder) {
+    const start = page * 5;
+    const end = start + 5;
+    const capesPage = cosmeticCapes.slice(start, end);
+    const cosmeticsPage = cosmetics.slice(start, end);
+
+    const embed = new EmbedBuilder()
+        .setColor(COLOR_PRESETS.DEFAULT)
+        .setTitle(`🎮 پروفایل ماینکرفت ${username}`)
+        // کارت کامل پروفایل از mc-heads.net
+        .setImage(`https://mc-heads.net/minecraft/profile/${username}`)
+        .setThumbnail(`https://mc-heads.net/head/${uuid}/left`)
+        .setTimestamp();
+
+    // افزودن رندر کامل بدن در سمت چپ
+    embed.addFields({ 
+        name: "🎭 نمای کامل کاراکتر", 
+        value: `[مشاهده رندر HD](https://mc-heads.net/body/${uuid}/left)`,
+        inline: true 
+    });
+
+    // اگر کیپی وجود داشت
+    if (capesPage.length > 0) {
+        embed.addFields({ 
+            name: "🧥 کیپ‌های فعال", 
+            value: `[مشاهده کیپ‌ها در NameMC](https://namemc.com/profile/${uuid})`,
+            inline: true 
+        });
+    }
+    
+    if (cosmeticsPage.length > 0) {
+        embed.addFields({ 
+            name: "🎨 مدل اسکین", 
+            value: cosmeticsPage.join('\n'), 
+            inline: true 
+        });
+    }
+
+    // افزودن لینک‌های مفید
+    embed.addFields({ 
+        name: "🔍 لینک‌های مفید", 
+        value: `[NameMC](https://namemc.com/profile/${uuid}) | [Skin History](https://namemc.com/profile/${uuid}/skin) | [Cape Viewer](https://mc-heads.net/cape/${uuid})`, 
+        inline: false 
+    });
+
+    return embed;
+}
+const axios = require('axios');
 const COLOR_PRESETS = {
-    DEFAULT: "#2f3136",
-    BLUE: "#3498db",
-    RED: "#e74c3c",
-    GREEN: "#2ecc71",
-    PURPLE: "#9b59b6",
-    GOLD: "#f1c40f",
-    ORANGE: "#e67e22"
+    DEFAULT: "#006400" // Dark Green
+};
+
+function getCapeTypeName(capeUrl) {
+    if (capeUrl.includes('minecraft.net')) {
+        if (capeUrl.includes('migrator')) return '🌟 کیپ مهاجرت موجانگ';
+        if (capeUrl.includes('scrolls')) return '📜 کیپ Scrolls';
+        if (capeUrl.includes('translator')) return '🌍 کیپ مترجم موجانگ';
+        if (capeUrl.includes('cobalt')) return '💠 کیپ Cobalt';
+        if (capeUrl.includes('mojang')) return '⭐ کیپ کارمند موجانگ';
+        if (capeUrl.includes('minecon')) {
+            const year = capeUrl.match(/201[0-9]/);
+            return `🎪 کیپ MineCon ${year ? year[0] : ''}`;
+        }
+        return '🌟 کیپ رسمی موجانگ';
+    }
+    if (capeUrl.includes('optifine')) return '🎭 کیپ OptiFine';
+    return '🧥 کیپ ناشناخته';
+};
+
+async function getNameHistory(uuid) {
+    try {
+        const response = await axios.get(`https://api.mojang.com/user/profiles/${uuid}/names`);
+        return response.data.reverse(); // جدیدترین نام‌ها اول
+    } catch (error) {
+        console.error('Error fetching name history:', error);
+        return null;
+    }
 };
 
 const cache = new Map();
@@ -32,6 +99,76 @@ async function getMojangData(username) {
     } catch (error) {
         if (error.response?.status === 404) return null;
         throw error;
+    }
+}
+
+async function getMinecraftProfile(uuid) {
+    const cacheKey = `profile-${uuid}`;
+    const cached = cache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) return cached.data;
+
+    try {
+        // دریافت اطلاعات از API موجانگ
+        const sessionResponse = await axios.get(`https://sessionserver.mojang.com/session/minecraft/profile/${uuid}`, { timeout: 10000 });
+        const texturesBase64 = sessionResponse.data.properties.find(prop => prop.name === 'textures').value;
+        const texturesData = JSON.parse(Buffer.from(texturesBase64, 'base64').toString());
+        
+        const capes = [];
+        const cosmetics = [];
+
+        // چک کردن کیپ‌های موجانگ
+        if (texturesData.textures.CAPE) {
+            const capeUrl = texturesData.textures.CAPE.url;
+            
+            if (capeUrl.includes('minecraft.net')) {
+                if (capeUrl.includes('migrator')) {
+                    capes.push('🌟 کیپ مهاجرت موجانگ');
+                } else if (capeUrl.includes('scrolls')) {
+                    capes.push('📜 کیپ Scrolls');
+                } else if (capeUrl.includes('translator')) {
+                    capes.push('🌍 کیپ مترجم موجانگ');
+                } else if (capeUrl.includes('cobalt')) {
+                    capes.push('💠 کیپ Cobalt');
+                } else if (capeUrl.includes('mojang')) {
+                    capes.push('⭐ کیپ کارمند موجانگ');
+                } else if (capeUrl.includes('minecon')) {
+                    const year = capeUrl.match(/201[0-9]/);
+                    capes.push(`� کیپ MineCon ${year ? year[0] : ''}`);
+                } else {
+                    capes.push('🌟 کیپ رسمی موجانگ');
+                }
+            }
+        }
+
+        // چک کردن کیپ OptiFine
+        try {
+            const optifineCapeUrl = `http://s.optifine.net/capes/${username}.png`;
+            const optifineResponse = await axios.head(optifineCapeUrl, { timeout: 5000 });
+            if (optifineResponse.status === 200) {
+                capes.push('🎭 کیپ OptiFine');
+            }
+        } catch (e) {
+            // اگر کیپ OptiFine وجود نداشت، خطا را نادیده می‌گیریم
+        }
+
+        // چک کردن مدل اسکین
+        if (texturesData.textures.SKIN?.metadata?.model === 'slim') {
+            cosmetics.push('👕 مدل Slim (Alex)');
+        } else {
+            cosmetics.push('👕 مدل Classic (Steve)');
+        }
+
+        const result = {
+            capes,
+            cosmetics,
+            totalPages: Math.ceil((capes.length + cosmetics.length) / 5)
+        };
+
+        cache.set(cacheKey, { data: result, timestamp: Date.now() });
+        return result;
+    } catch (error) {
+        console.error('Error fetching profile:', error);
+        return { capes: [], cosmetics: [], totalPages: 0 };
     }
 }
 
@@ -94,24 +231,89 @@ function createCosmeticEmbed(username, uuid, cosmeticCapes, cosmetics, page, Emb
     const end = start + 5;
     const capesPage = cosmeticCapes.slice(start, end);
     const cosmeticsPage = cosmetics.slice(start, end);
-    return new EmbedBuilder()
+
+    const embed = new EmbedBuilder()
         .setColor(COLOR_PRESETS.DEFAULT)
-        .setTitle(`🧥 کیپ‌ها و 🎨 کازمتیک‌ها - ${username}`)
-        .addFields(
-            { name: "کیپ‌ها", value: capesPage.length > 0 ? capesPage.join('\n') : 'ندارد', inline: true },
-            { name: "کازمتیک‌ها", value: cosmeticsPage.length > 0 ? cosmeticsPage.join('\n') : 'ندارد', inline: true },
-            { name: "صفحه", value: `${page + 1}`, inline: true }
-        )
+        .setTitle(`� اطلاعات اسکین ${username}`)
         .setThumbnail(`https://crafatar.com/avatars/${uuid}?size=256&overlay`)
+        .setImage(`https://crafatar.com/renders/body/${uuid}?size=512&overlay`)
         .setTimestamp();
+
+    // اگر کیپی وجود داشت
+    if (capesPage.length > 0) {
+        embed.setImage(capesPage[0]); // نمایش اولین کیپ به عنوان تصویر اصلی
+    }
+    
+    if (cosmeticsPage.length > 0) {
+        embed.addFields({ name: "🎨 مدل اسکین", value: cosmeticsPage.join('\n'), inline: false });
+    }
+
+    // افزودن دکمه‌های مشاهده پروفایل در NameMC
+    embed.addFields({ 
+        name: "🔍 مشاهده پروفایل کامل", 
+        value: `[مشاهده در NameMC](https://namemc.com/profile/${uuid})`, 
+        inline: false 
+    });
+
+    return embed;
 }
 
 const db = require('./database');
 const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 
+// Bad Words Management
+const badWords = new Set();
+
+async function addBadWord(word) {
+    if (badWords.has(word)) return false;
+    badWords.add(word);
+    await db.badWords.set(word, true);
+    return true;
+}
+
+async function removeBadWord(word) {
+    if (!badWords.has(word)) return false;
+    badWords.delete(word);
+    await db.badWords.delete(word);
+    return true;
+}
+
+function listBadWords() {
+    return Array.from(badWords);
+}
+
+function isBadWord(text) {
+    const words = text.toLowerCase().split(/\s+/);
+    return words.some(word => badWords.has(word));
+}
+
+// Warning System Management
+async function addWarning(userId, reason, moderator) {
+    const warnings = await db.warnings.get(userId) || [];
+    warnings.push({
+        reason,
+        moderatorId: moderator.id,
+        timestamp: Date.now()
+    });
+    await db.warnings.set(userId, warnings);
+    return warnings.length;
+}
+
+async function clearWarnings(userId) {
+    await db.warnings.delete(userId);
+    return true;
+}
+
+async function getWarnings(userId) {
+    return await db.warnings.get(userId) || [];
+}
+
 let client = null;
 function setClient(c) { client = c; }
+
+let logger = null;
+function setLogger(l) { logger = l; }
 
 async function sendWarningDM(member, warningCount, maxWarnings, reason, moderator) {
     try {
@@ -146,14 +348,26 @@ async function registerCommands(clientId, guildId, token) {
         new SlashCommandBuilder()
             .setName("mcinfo")
             .setDescription("نمایش اطلاعات کامل اکانت ماینکرفت در هایپیکسل")
-            .addStringOption(option => option.setName("username").setDescription("یوزرنیم ماینکرفت").setRequired(true))
-            .addStringOption(option => option.setName("color").setDescription("رنگ امبد").setRequired(false)
-                .addChoices(
-                    { name: "آبی", value: "blue" }, { name: "قرمز", value: "red" }, { name: "سبز", value: "green" },
-                    { name: "بنفش", value: "purple" }, { name: "طلایی", value: "gold" }, { name: "نارنجی", value: "orange" },
-                    { name: "پیش‌فرض", value: "default" }
-                ))
-            .addStringOption(option => option.setName("price").setDescription("قیمت اکانت (تومان)").setRequired(false))
+            .addStringOption(option => 
+                option.setName("username")
+                .setDescription("یوزرنیم ماینکرفت")
+                .setRequired(true)
+            )
+            .addStringOption(option => 
+                option.setName("price")
+                .setDescription("قیمت اکانت (تومان)")
+                .setRequired(false)
+            )
+            .addBooleanOption(option =>
+                option.setName("show_stats")
+                .setDescription("نمایش استتس هایپیکسل")
+                .setRequired(false)
+            )
+            .addBooleanOption(option =>
+                option.setName("show_history")
+                .setDescription("نمایش تاریخچه نام‌های قبلی")
+                .setRequired(false)
+            )
             .toJSON()
     );
     commands.unshift(
@@ -205,13 +419,26 @@ async function registerCommands(clientId, guildId, token) {
             .toJSON()
     );
 
-module.exports.addBadWord = addBadWord;
-module.exports.removeBadWord = removeBadWord;
-module.exports.listBadWords = listBadWords;
-module.exports.isBadWord = isBadWord;
-module.exports.addWarning = addWarning;
-module.exports.clearWarnings = clearWarnings;
-module.exports.getWarnings = getWarnings;
+// Warning System
+async function addWarning(userId, reason, moderator) {
+    const warnings = await db.warnings.get(userId) || [];
+    warnings.push({
+        reason,
+        moderatorId: moderator.id,
+        timestamp: Date.now()
+    });
+    await db.warnings.set(userId, warnings);
+    return warnings.length;
+}
+
+async function clearWarnings(userId) {
+    await db.warnings.delete(userId);
+    return true;
+}
+
+async function getWarnings(userId) {
+    return await db.warnings.get(userId) || [];
+}
     commands.unshift(
         new SlashCommandBuilder()
             .setName('invites')
@@ -784,4 +1011,106 @@ async function ensureTicketCategory(guild) {
     return category;
 }
 
-module.exports = { COLOR_PRESETS, ms, logAction, updateShopStatus, ensureTicketCategory, createTicketChannel, checkGiveaways, endGiveaway, checkPolls, endPoll, sendWarningDM, registerCommands, setClient };
+const { createProfileImage } = require('./profileImage');
+
+/**
+ * ارسال تصویر ترکیبی پروفایل به دیسکورد (شامل اسکین، کیپ و استتس)
+ * @param {object} interaction اینتراکشن دیسکورد
+ * @param {string} uuid UUID بازیکن
+ * @param {string[]} capeUrls آرایه URL کیپ‌ها
+ * @param {object} hypixelStats اطلاعات هایپیکسل
+ */
+async function sendProfileImageEmbed(interaction, uuid, capeUrls, hypixelStats) {
+    try {
+        // Extract username and rank if available
+        const username = interaction.options.getString('username') || 'Unknown';
+        const rank = interaction.options.getString('rank') || '';
+        // Flatten stats for new image (combine Bedwars/SkyWars if present)
+        let stats = {};
+        if (hypixelStats && typeof hypixelStats === 'object') {
+            if (hypixelStats.Bedwars) {
+                const bw = hypixelStats.Bedwars;
+                stats['Bedwars Level'] = bw.level || 0;
+                stats['Bedwars Wins'] = bw.wins || 0;
+                stats['Bedwars Losses'] = bw.losses || 0;
+                stats['Bedwars W/L'] = ((bw.wins || 0) / (bw.losses || 1)).toFixed(2);
+            }
+            if (hypixelStats.SkyWars) {
+                const sw = hypixelStats.SkyWars;
+                stats['SkyWars Level'] = sw.level || 0;
+                stats['SkyWars Wins'] = sw.wins || 0;
+                stats['SkyWars Losses'] = sw.losses || 0;
+                stats['SkyWars W/L'] = ((sw.wins || 0) / (sw.losses || 1)).toFixed(2);
+            }
+        }
+        // Call new image generator
+        const buffer = await createProfileImage({ uuid, username, rank, stats, capeUrls });
+
+        // اطلاعات کیپ‌ها
+        const capeInfo = capeUrls.length > 0 
+            ? `🧥 **${capeUrls.length}** کیپ فعال`
+            : '❌ بدون کیپ فعال';
+
+        const mainEmbed = {
+            color: parseInt(COLOR_PRESETS.DEFAULT.replace("#", ""), 16),
+            author: {
+                name: `🎮 پروفایل ماینکرفت ${username}`,
+                icon_url: `https://mc-heads.net/avatar/${uuid}`
+            },
+            title: capeInfo,
+            description: [
+                `> 📝 **نام کاربری:** \`${username}\``,
+                `> 🆔 **UUID:** \`${uuid}\``,
+                interaction.options.getString('price') ? `> 💰 **قیمت:** ${interaction.options.getString('price')} تومان` : '',
+                `\n${capeUrls.length > 0 ? '**🏆 کیپ‌های فعال:**\n' + capeUrls.map(url => '> • ' + getCapeTypeName(url)).join('\n') : ''}`
+            ].filter(Boolean).join('\n'),
+            image: { url: 'attachment://profile.png' },
+            fields: [],
+            footer: { 
+                text: '⭐ کلیک روی دکمه‌های زیر برای اطلاعات بیشتر',
+                icon_url: 'https://mc-heads.net/head/' + uuid
+            },
+            timestamp: new Date()
+        };
+
+        await interaction.editReply({
+            embeds: [mainEmbed],
+            components: [
+                new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`namehistory_${uuid}`)
+                            .setLabel('📜 تاریخچه نام‌ها')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setURL(`https://namemc.com/profile/${uuid}`)
+                            .setLabel('🔍 مشاهده در NameMC')
+                            .setStyle(ButtonStyle.Link),
+                        new ButtonBuilder()
+                            .setURL(`https://plancke.io/hypixel/player/stats/${uuid}`)
+                            .setLabel('📊 استتس کامل هایپیکسل')
+                            .setStyle(ButtonStyle.Link)
+                    )
+            ],
+            files: [{ 
+                attachment: buffer, 
+                name: 'profile.png'
+            }]
+        });
+    } catch (e) {
+        console.error('Error sending profile image embed:', e);
+        await interaction.editReply({ content: '❌ خطا در ساخت تصویر پروفایل.', embeds: [], files: [] });
+    }
+    createCosmeticEmbed,
+    sendProfileImageEmbed,
+    getNameHistory, // اضافه کردن تابع تاریخچه نام‌ها
+    // Bad words management
+    addBadWord,
+    removeBadWord,
+    listBadWords,
+    isBadWord,
+    // Warning system
+    addWarning,
+    clearWarnings,
+    getWarnings
+};

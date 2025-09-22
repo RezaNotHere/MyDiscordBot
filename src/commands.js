@@ -2,79 +2,18 @@
 // Slash command and message command handlers
 const { 
     EmbedBuilder, 
-    ActionRowBuilder, 
     ButtonBuilder, 
     ButtonStyle, 
     StringSelectMenuBuilder, 
     ModalBuilder, 
     TextInputBuilder, 
-    TextInputStyle 
+    TextInputStyle,
+    ActionRowBuilder
 } = require('discord.js');
 const db = require('./database');
 const utils = require('./utils');
-const InteractionUtils = require('./utils/InteractionUtils');
-const { 
-    PermissionError, 
-    ValidationError, 
-    ApiError,
-    NotFoundError 
-} = require('./errors/BotError');
-
-let logger = null;
-
-function setLogger(loggerInstance) {
-    logger = loggerInstance;
-}
-
-
-// --- Minecraft & Hypixel Slash Commands ---
-const { SlashCommandBuilder } = require('discord.js');
-
-const mcCommands = [
-    new SlashCommandBuilder()
-        .setName("mcinfo")
-        .setDescription("نمایش اطلاعات کامل اکانت ماینکرفت در هایپیکسل")
-        .addStringOption(option => option.setName("username").setDescription("یوزرنیم ماینکرفت").setRequired(true))
-        .addStringOption(option => option.setName("color").setDescription("رنگ امبد").setRequired(false)
-            .addChoices(
-                { name: "آبی", value: "blue" }, { name: "قرمز", value: "red" }, { name: "سبز", value: "green" },
-                { name: "بنفش", value: "purple" }, { name: "طلایی", value: "gold" }, { name: "نارنجی", value: "orange" },
-                { name: "پیش‌فرض", value: "default" }
-            ))
-        .addStringOption(option => option.setName("price").setDescription("قیمت اکانت (تومان)").setRequired(false)),
-    new SlashCommandBuilder()
-        .setName("send_account")
-        .setDescription("ارسال اطلاعات اکانت برای خریدار")
-        .addStringOption(option => option.setName("mail").setDescription("ایمیل اکانت").setRequired(true))
-        .addStringOption(option => option.setName("recovery_code").setDescription("کد بازیابی اکانت").setRequired(true))
-        .addStringOption(option => option.setName("account_num").setDescription("شماره اکانت").setRequired(true))
-        .addStringOption(option => option.setName("username").setDescription("یوزرنیم اکانت (اختیاری)").setRequired(false))
-        .addStringOption(option => option.setName("password").setDescription("پسورد اکانت (اختیاری)").setRequired(false))
-];
-
-// اگر سیستم ثبت commands دارید، این آرایه را به آن اضافه کنید یا export نمایید
-module.exports = {
-    mcCommands,
-    setLogger
-};
-
-async function handleSlashCommand(interaction, client, env) {
-    try {
-        if (logger) {
-            logger.info(`Command executed`, {
-                command: interaction.commandName,
-                user: interaction.user.id,
-                guild: interaction.guild?.id,
-                channel: interaction.channel?.id
-            });
-        }
-
-        // --- mcinfo ---
-    if (interaction.commandName === "mcinfo") {
-        await InteractionUtils.deferReply(interaction, true);
+        await InteractionUtils.deferReply(interaction, false);
         const username = interaction.options.getString("username").trim();
-        const colorOption = interaction.options.getString("color") || "default";
-        const color = utils.COLOR_PRESETS[colorOption.toUpperCase()] || utils.COLOR_PRESETS.DEFAULT;
         const price = interaction.options.getString("price");
         try {
             const mojangData = await utils.getMojangData(username);
@@ -83,7 +22,129 @@ async function handleSlashCommand(interaction, client, env) {
             }
 
             const uuid = mojangData.id;
+            // لیست کامل کیپ‌های Minecraft طبق جدول کاربر
+            // Official and best available unofficial Minecraft cape textures
+            const minecraftCapes = [
+                // عمومی / اعتباری
+                { label: 'Migrator Cape', value: 'https://textures.minecraft.net/texture/5786fe99be377dfb6858859f926c4dbc995751e91cee373468c5fbf4865e7151' },
+                { label: 'Vanilla Cape', value: 'https://mcassets.cursecdn.com/skins/1/Vanilla_Cape.png' }, // غیررسمی: MinecraftCapes.net
+                { label: 'Pan Cape', value: 'https://mcassets.cursecdn.com/skins/1/Pan_Cape.png' }, // غیررسمی: MinecraftCapes.net
+                { label: 'Common Cape', value: 'https://mcassets.cursecdn.com/skins/1/Common_Cape.png' }, // غیررسمی: MinecraftCapes.net
+
+                // MineCon
+                { label: 'MineCon 2011 Cape', value: 'https://textures.minecraft.net/texture/953cac8b779fe41383e675ee2b86071a71658f2180f56fbce8aa315ea70e2ed6' },
+                { label: 'MineCon 2012 Cape', value: 'https://textures.minecraft.net/texture/a2e8d97ec79100e90a75d369d1b3ba81273c4f82bc1b737e934eed4a854be1b6' },
+                { label: 'MineCon 2013 Cape', value: 'https://textures.minecraft.net/texture/153b1a0dfcbae953cdeb6f2c2bf6bf79943239b1372780da44bcbb29273131da' },
+                { label: 'MineCon 2015 Cape', value: 'https://textures.minecraft.net/texture/b0cc08840700447322d953a02b965f1d65a13a603bf64b17c803c21446fe1635' },
+                { label: 'MineCon 2016 Cape', value: 'https://textures.minecraft.net/texture/2340c0e03dd24a11b15a8b33c2a7e9e32abb2051b2481d0d0e2b8a1737b7b' },
+
+                // ویژه / پرسنلی
+                { label: 'Mojang Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/mojang_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Mojang Studios Cape', value: 'https://textures.minecraft.net/texture/17912790ff164b93196f08ba71d0e62129304776d0f347334f8a6eae509f8a56' },
+                { label: 'Translator Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/translator_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Mojira Moderator Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/mojira_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Cobalt Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/cobalt_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Scrolls Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/scrolls_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Millionth Customer Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/millionth_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Prismarine Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/prismarine_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Turtle Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/turtle_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Birthday Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/birthday_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Valentine Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/valentine_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+
+                // کمپین / تبلیغاتی
+                { label: 'Cherry Blossom Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/cherryblossom_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: '15th Anniversary Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/15th_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Purple Heart Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/purpleheart_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Follower’s Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/followers_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Founder’s Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/founders_cape.png' }, // غیررسمی: MinecraftCapes.co.uk
+                { label: 'Progress Pride Cape', value: 'https://www.minecraftcapes.co.uk/img/capes/pride_cape.png' } // غیررسمی: MinecraftCapes.co.uk
+            ];
+
+            // تابع async برای ارسال منوی انتخاب کیپ
+            async function sendCapeSelectMenu(interaction, minecraftCapes) {
+                const capeEmbed = {
+                    color: 0x00b894,
+                    title: 'انتخاب کیپ اکانت',
+                    description: 'لطفاً کیپ‌های مورد نظر را انتخاب کنید. پس از انتخاب، تصویر پروفایل با همان کیپ‌ها ساخته می‌شود.',
+                    footer: { text: 'Minecraft Cape Selector' }
+                };
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId('select_capes')
+                    .setPlaceholder('انتخاب کیپ (امکان انتخاب چندتایی)')
+                    .setMinValues(0)
+                    .setMaxValues(minecraftCapes.length)
+                    .addOptions(minecraftCapes);
+                const row = new ActionRowBuilder().addComponents(selectMenu);
+                await interaction.editReply({
+                    embeds: [capeEmbed],
+                    components: [row],
+                    ephemeral: true
+                });
+            }
+            // فراخوانی تابع ارسال منو
+            await sendCapeSelectMenu(interaction, minecraftCapes);
+            // ...existing code...
+
+            // ...existing code...
+
+            // دریافت تاریخچه نام‌ها (اگر 404 شد، نادیده بگیر)
+            let nameHistory = [];
+            try {
+                nameHistory = await utils.getNameHistory(uuid);
+            } catch (e) {
+                if (e?.response?.status === 404) {
+                    nameHistory = [];
+                } else {
+                    console.error('Error fetching name history:', e);
+                }
+            }
+            
+            // دریافت اطلاعات هایپیکسل و اسکای‌بلاک
             const hypixelData = await utils.getHypixelData(uuid, process.env.HYPIXEL_API_KEY);
+            
+            // استخراج کوین‌های اسکای‌بلاک
+            let skyblockCoins = 0;
+            let skyblockBankBalance = 0;
+            if (hypixelData?.player?.stats?.SkyBlock?.profiles) {
+                for (const profile of Object.values(hypixelData.player.stats.SkyBlock.profiles)) {
+                    if (profile.banking?.balance) {
+                        skyblockBankBalance += profile.banking.balance;
+                    }
+                    if (profile.coin_purse) {
+                        skyblockCoins += profile.coin_purse;
+                    }
+                }
+            }
+
+            // ساخت امبد برای نمایش اطلاعات
+            const embed = new EmbedBuilder()
+                .setColor('#FFD700') // طلایی برای جذابیت بیشتر
+                .setTitle(`🎮 پروفایل ماینکرفت ${username}`)
+                .setThumbnail(`https://mc-heads.net/avatar/${uuid}`)
+                .setTimestamp();
+
+            // استایل‌دهی قیمت اکانت
+            if (price) {
+                embed.setDescription(`� **قیمت اکانت:**  __**${price.toLocaleString()} تومان**__ \🟢`);
+            } else {
+                embed.setDescription('💸 **قیمت اکانت:**  __نامشخص__');
+            }
+
+            // استایل‌دهی کوین اسکای‌بلاک
+            if (skyblockCoins > 0 || skyblockBankBalance > 0) {
+                embed.addFields({
+                    name: "🏦 اطلاعات اسکای‌بلاک",
+                    value: `\n<:sbcoin:1200000000000000000> **کوین همراه:** __${skyblockCoins.toLocaleString()}__\n<:bank:1200000000000000001> **بانک:** __${skyblockBankBalance.toLocaleString()}__\n<:total:1200000000000000002> **مجموع:** __${(skyblockCoins + skyblockBankBalance).toLocaleString()}__`,
+                    inline: false
+                });
+            } else {
+                embed.addFields({
+                    name: "🏦 اطلاعات اسکای‌بلاک",
+                    value: '❌ اطلاعات کوین اسکای‌بلاک یافت نشد.',
+                    inline: false
+                });
+            }
+            
             if (!hypixelData?.player || !hypixelData.success) {
                 if (logger) {
                     logger.warn('Hypixel API error', { 
@@ -96,44 +157,11 @@ async function handleSlashCommand(interaction, client, env) {
             }
 
             const player = hypixelData.player;
-            const hypixelRanks = utils.getHypixelRanks(player);
-            const networkLevel = utils.getNetworkLevel(player);
-            const karma = player.karma || 0;
-            const achievementPoints = player.achievementPoints || 0;
-            const cosmeticCapes = player.cosmeticCapes || [];
-            const cosmetics = player.cosmeticTokens || [];
-            const skinUrl = `https://crafatar.com/renders/body/${uuid}?size=512&overlay`;
-            const avatarUrl = `https://crafatar.com/avatars/${uuid}?size=256&overlay`;
-            
-            const embed = new EmbedBuilder()
-                .setColor(color)
-                .setTitle(`🔍 اطلاعات هایپیکسل - ${username}`)
-                .setDescription(`سطح شبکه: **${networkLevel}** | کارما: **${karma.toLocaleString()}**`)
-                .addFields(
-                    { name: "🎖️ رنک‌های هایپیکسل", value: hypixelRanks, inline: false },
-                    { name: "🏆 امتیاز دستاوردها", value: achievementPoints.toLocaleString(), inline: true },
-                    { name: "🧥 تعداد کیپ‌ها", value: cosmeticCapes.length.toString(), inline: true },
-                    { name: "🎨 تعداد کازمتیک‌ها", value: cosmetics.length.toString(), inline: true },
-                    ...(price ? [{ name: "💰 قیمت", value: `**${price} تومان**`, inline: true }] : [])
-                )
-                .setThumbnail(avatarUrl)
-                .setImage(skinUrl)
-                .setFooter({ text: `هایپیکسل ID: ${player._id || 'نامشخص'}`, iconURL: "https://hypixel.net/styles/hypixel-v2/images/header-logo.png" })
-                .setTimestamp();
-
-            await interaction.editReply({ embeds: [embed], ephemeral: true });
-        } catch (error) {
-            if (logger) {
-                logger.logCommandError(error, 'mcinfo', interaction);
-            }
-            let msg = "خطا در دریافت اطلاعات.";
-            if (error.code === 'ECONNABORTED') msg = "زمان درخواست به پایان رسید.";
-            else if (error.response?.status === 429) msg = "تعداد درخواست‌ها زیاد است.";
-            else if (error.response?.status === 403) msg = "کلید API معتبر نیست.";
-            await InteractionUtils.sendError(interaction, msg, true);
-        }
-        return;
-    }
+            // اطلاعات استتس برای تصویر
+            const gameStats = utils.getGameStats(player);
+            // ارسال تصویر ترکیبی
+            // ...existing code...
+        // ...existing code...
     // --- /addbadword ---
     if (interaction.commandName === 'addbadword') {
         if (!interaction.member.permissions.has('Administrator')) {
@@ -143,7 +171,6 @@ async function handleSlashCommand(interaction, client, env) {
         utils.addBadWord(word);
         await InteractionUtils.sendSuccess(interaction, `کلمه غیرمجاز «${word}» اضافه شد.`);
         return;
-    }
 
     // --- /removebadword ---
     if (interaction.commandName === 'removebadword') {
@@ -968,23 +995,9 @@ async function handleSlashCommand(interaction, client, env) {
         }
         await interaction.showModal(modal);
     }
-    } catch (error) {
-        if (logger) {
-            logger.logCommandError(error, interaction.commandName, interaction);
-        }
-        try {
-            // اگر هنوز پاسخی به اینتراکشن داده نشده، یک پیام خطا نمایش می‌دهیم
-            if (!interaction.replied && !interaction.deferred) {
-                await InteractionUtils.sendError(interaction, 'خطایی در اجرای دستور رخ داد.');
-            } else {
-                await interaction.editReply({ content: 'خطایی در اجرای دستور رخ داد.' });
-            }
-        } catch (replyError) {
-            console.error('Error while sending error response:', replyError);
-        }
-    }
 }
 
+// ...existing code...
 module.exports = {
     handleSlashCommand,
     setLogger,

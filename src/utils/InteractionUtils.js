@@ -9,11 +9,13 @@ class InteractionUtils {
      */
     static async sendError(interaction, message, edit = false) {
         const errorEmbed = new EmbedBuilder()
-            .setColor('Red')
-            .setDescription(`❌ ${message}`);
-        
+            .setColor('#E74C3C') // قرمز زیبا
+            .setTitle('⛔️ خطا')
+            .setDescription(`**${message}**\n\n> لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.`)
+            .setFooter({ text: 'در صورت تکرار مشکل، به ادمین اطلاع دهید.' });
+
         const options = { embeds: [errorEmbed], ephemeral: true };
-        
+
         try {
             if (edit && interaction.deferred) {
                 await interaction.editReply(options);
