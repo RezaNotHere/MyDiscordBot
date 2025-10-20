@@ -1,124 +1,64 @@
-/**// --- Commands Array (must be defined before any use!) ---
+// --- Commands Array (must be defined before any use!) ---
+const commands = [];
+// --- Bad Words List (in-memory, can be persisted to db if needed) ---
 
- * Main utilities module that exports all functionalityconst commands = [];
+// ...existing code...
 
- */// --- Bad Words List (in-memory, can be persisted to db if needed) ---
-
-
-
-const cosmetics = require('./modules/cosmetics');// ...existing code...
-
-const mojang = require('./modules/mojang');
-
-const warnings = require('./modules/warnings');function createCosmeticEmbed(username, uuid, cosmeticCapes, cosmetics, page, EmbedBuilder) {
-
+function createCosmeticEmbed(username, uuid, cosmeticCapes, cosmetics, page, EmbedBuilder) {
     const start = page * 5;
+    const end = start + 5;
+    const capesPage = cosmeticCapes.slice(start, end);
+    const cosmeticsPage = cosmetics.slice(start, end);
 
-// Global state    const end = start + 5;
+    const embed = new EmbedBuilder()
+        .setColor(COLOR_PRESETS.DEFAULT)
+        .setTitle(`🎮 پروفایل ماینکرفت ${username}`)
+        // کارت کامل پروفایل از mc-heads.net
+        .setImage(`https://mc-heads.net/minecraft/profile/${username}`)
+        .setThumbnail(`https://mc-heads.net/head/${uuid}/left`)
+        .setTimestamp();
 
-let client = null;    const capesPage = cosmeticCapes.slice(start, end);
-
-let logger = null;    const cosmeticsPage = cosmetics.slice(start, end);
-
-
-
-/**    const embed = new EmbedBuilder()
-
- * Set the Discord client instance        .setColor(COLOR_PRESETS.DEFAULT)
-
- * @param {Object} c - Discord client instance        .setTitle(`🎮 پروفایل ماینکرفت ${username}`)
-
- */        // کارت کامل پروفایل از mc-heads.net
-
-function setClient(c) {         .setImage(`https://mc-heads.net/minecraft/profile/${username}`)
-
-    client = c;        .setThumbnail(`https://mc-heads.net/head/${uuid}/left`)
-
-}        .setTimestamp();
-
-
-
-/**    // افزودن رندر کامل بدن در سمت چپ
-
- * Set the logger instance    embed.addFields({ 
-
- * @param {Object} l - Logger instance        name: "🎭 نمای کامل کاراکتر", 
-
- */        value: `[مشاهده رندر HD](https://mc-heads.net/body/${uuid}/left)`,
-
-function setLogger(l) {         inline: true 
-
-    logger = l;    });
-
-}
+    // افزودن رندر کامل بدن در سمت چپ
+    embed.addFields({ 
+        name: "🎭 نمای کامل کاراکتر", 
+        value: `[مشاهده رندر HD](https://mc-heads.net/body/${uuid}/left)`,
+        inline: true 
+    });
 
     // اگر کیپی وجود داشت
-
-/**    if (capesPage.length > 0) {
-
- * Get the current Discord client instance        embed.addFields({ 
-
- * @returns {Object} Discord client            name: "🧥 کیپ‌های فعال", 
-
- * @throws {Error} If client is not initialized            value: `[مشاهده کیپ‌ها در NameMC](https://namemc.com/profile/${uuid})`,
-
- */            inline: true 
-
-function getClient() {        });
-
-    if (!client) {    }
-
-        throw new Error('Discord client not initialized');    
-
-    }    if (cosmeticsPage.length > 0) {
-
-    return client;        embed.addFields({ 
-
-}            name: "🎨 مدل اسکین", 
-
+    if (capesPage.length > 0) {
+        embed.addFields({ 
+            name: "🧥 کیپ‌های فعال", 
+            value: `[مشاهده کیپ‌ها در NameMC](https://namemc.com/profile/${uuid})`,
+            inline: true 
+        });
+    }
+    
+    if (cosmeticsPage.length > 0) {
+        embed.addFields({ 
+            name: "🎨 مدل اسکین", 
             value: cosmeticsPage.join('\n'), 
+            inline: true 
+        });
+    }
 
-/**            inline: true 
-
- * Get the current logger instance        });
-
- * @returns {Object} Logger instance    }
-
- * @throws {Error} If logger is not initialized
-
- */    // افزودن لینک‌های مفید
-
-function getLogger() {    embed.addFields({ 
-
-    if (!logger) {        name: "🔍 لینک‌های مفید", 
-
-        throw new Error('Logger not initialized');        value: `[NameMC](https://namemc.com/profile/${uuid}) | [Skin History](https://namemc.com/profile/${uuid}/skin) | [Cape Viewer](https://mc-heads.net/cape/${uuid})`, 
-
-    }        inline: false 
-
-    return logger;    });
-
-}
+    // افزودن لینک‌های مفید
+    embed.addFields({ 
+        name: "🔍 لینک‌های مفید", 
+        value: `[NameMC](https://namemc.com/profile/${uuid}) | [Skin History](https://namemc.com/profile/${uuid}/skin) | [Cape Viewer](https://mc-heads.net/cape/${uuid})`, 
+        inline: false 
+    });
 
     return embed;
+}
+const axios = require('axios');
+const COLOR_PRESETS = {
+    DEFAULT: "#006400" // Dark Green
+};
 
-module.exports = {}
-
-    ...cosmetics,const axios = require('axios');
-
-    ...mojang,const COLOR_PRESETS = {
-
-    ...warnings,    DEFAULT: "#006400" // Dark Green
-
-    setClient,};
-
-    setLogger,
-
-    getClient,function getCapeTypeName(capeUrl) {
-
-    getLogger    if (capeUrl.includes('minecraft.net')) {
-
-};        if (capeUrl.includes('migrator')) return '🌟 کیپ مهاجرت موجانگ';
+function getCapeTypeName(capeUrl) {
+    if (capeUrl.includes('minecraft.net')) {
+        if (capeUrl.includes('migrator')) return '🌟 کیپ مهاجرت موجانگ';
         if (capeUrl.includes('scrolls')) return '📜 کیپ Scrolls';
         if (capeUrl.includes('translator')) return '🌍 کیپ مترجم موجانگ';
         if (capeUrl.includes('cobalt')) return '💠 کیپ Cobalt';

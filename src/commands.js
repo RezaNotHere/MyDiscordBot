@@ -20,34 +20,20 @@ async function handleSlashCommand(interaction) {
     // --- /mcinfo ---
     if (interaction.commandName === 'mcinfo') {
         await InteractionUtils.deferReply(interaction, true);
-        const username = interaction.options.getString("username").trim();
+        const username = interaction.options.getString("username")?.trim();
         const price = interaction.options.getString("price");
+        // Validate env variables
+        if (!process.env.MOJANG_API_KEY) {
+            await InteractionUtils.sendError(interaction, "کلید API موجانگ تنظیم نشده است.", true);
+            return;
+        }
         try {
-            const mojangData = await utils.getMojangData(username);
+            const mojangData = await utils.getMojangData(username, logger);
             if (!mojangData) {
-                throw new NotFoundError("اکانت ماینکرفت یافت نشد.", "MojangAccount");
+                throw new Error("اکانت ماینکرفت یافت نشد.");
             }
-
             const uuid = mojangData.id;
-            // لیست کامل کیپ‌های Minecraft طبق جدول کاربر
-            // کد مربوط به کیپ‌ها و URLs آنها
-            const capeUrls = {
-                migrator: 'https://textures.minecraft.net/texture/5786fe99be377dfb6858859f926c4dbc995751e91cee373468c5fbf4865e7151',
-                vanilla: 'https://textures.minecraft.net/texture/7e0e5e6e2e2c2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e',
-                pan: 'https://textures.minecraft.net/texture/2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e',
-                common: 'https://textures.minecraft.net/texture/3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e',
-                minecon2011: 'https://textures.minecraft.net/texture/953cac8b779fe41383e675ee2b86071a71658f2180f56fbce8aa315ea70e2ed6',
-                minecon2012: 'https://textures.minecraft.net/texture/a2e8d97ec79100e90a75d369d1b3ba81273c4f82bc1b737e934eed4a854be1b6',
-                minecon2013: 'https://textures.minecraft.net/texture/153b1a0dfcbae953cdeb6f2c2bf6bf79943239b1372780da44bcbb29273131da',
-                minecon2015: 'https://textures.minecraft.net/texture/b0cc08840700447322d953a02b965f1d65a13a603bf64b17c803c21446fe1635',
-                minecon2016: 'https://textures.minecraft.net/texture/2340c0e03dd24a11b15a8b33c2a7e9e32abb2051b2481d0d0e2b8a1737b7b',
-                mojangOld: 'https://textures.minecraft.net/texture/4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a',
-                mojangStudios: 'https://textures.minecraft.net/texture/17912790ff164b93196f08ba71d0e62129304776d0f347334f8a6eae509f8a56',
-                translator: 'https://textures.minecraft.net/texture/5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e',
-                mojiraMod: 'https://textures.minecraft.net/texture/6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e',
-                cobalt: 'https://textures.minecraft.net/texture/7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e'
-            };
-
+            // Centralized cape list
             const minecraftCapes = [
                 { label: 'Migrator Cape', value: 'migrator' },
                 { label: 'Vanilla Cape', value: 'vanilla' },
@@ -94,8 +80,6 @@ async function handleSlashCommand(interaction) {
             await InteractionUtils.sendError(interaction, msg, true);
             return;
         }
-        // اگر نیاز به بررسی hypixelData بود، اینجا قرار می‌گیرد (در صورت لزوم)
-        // ...existing code...
         // End of /mcinfo handler
         return;
     }

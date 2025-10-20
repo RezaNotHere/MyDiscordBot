@@ -11,7 +11,7 @@ class InteractionUtils {
         const errorEmbed = new EmbedBuilder()
             .setColor('#E74C3C') // قرمز زیبا
             .setTitle('⛔️ خطا')
-            .setDescription(`**${message}**\n\n> لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.`)
+            .setDescription(`**${message}**\n\n> لطفاً دوباره تلاش کنید یا با پشتیبانی ارتباط بگیرید.`)
             .setFooter({ text: 'در صورت تکرار مشکل، به ادمین اطلاع دهید.' });
 
         const options = { embeds: [errorEmbed], ephemeral: true };

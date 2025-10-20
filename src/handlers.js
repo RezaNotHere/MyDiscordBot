@@ -1,15 +1,19 @@
 // handlers.js
 const db = require('./database');
 const utils = require('./utils');
+const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionsBitField } = require('discord.js');
 
 // --- handleButton ---
 async function handleButton(interaction, client, env) {
     console.log(`handleButton called for customId='${interaction.customId}'`);
     // مدیریت دکمه تاریخچه نام
     if (interaction.customId.startsWith('namehistory_')) {
+        // فقط ادمین یا نقش خاص اجازه دارد
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: 'شما اجازه استفاده از این دکمه را ندارید.', ephemeral: true });
+        }
         const uuid = interaction.customId.replace('namehistory_', '');
         try {
-            const { EmbedBuilder } = require('discord.js');
             const nameHistory = await utils.getNameHistory(uuid);
             if (nameHistory && nameHistory.length > 0) {
                 const historyEmbed = new EmbedBuilder()
@@ -38,6 +42,10 @@ async function handleButton(interaction, client, env) {
 
     // --- شرکت در گیووای ---
     if (interaction.customId === 'join_giveaway') {
+        // فقط اعضای سرور اجازه شرکت دارند
+        if (!interaction.member) {
+            return interaction.reply({ content: 'برای شرکت باید عضو سرور باشید.', ephemeral: true });
+        }
         // پیدا کردن گیووای فعال بر اساس آیدی پیام
         const giveaway = db.giveaways.get(interaction.message.id);
         if (!giveaway || giveaway.ended) {
@@ -45,23 +53,26 @@ async function handleButton(interaction, client, env) {
         }
         if (!giveaway.participants) giveaway.participants = [];
         if (giveaway.participants.includes(interaction.user.id)) {
-            return interaction.reply({ content: 'شما قبلاً در این گیووای شرکت کرده‌اید.', ephemeral: true });
+            return interaction.reply({ content: 'شما قبلاً در گیووای شرکت کرده‌اید.', ephemeral: true });
         }
         giveaway.participants.push(interaction.user.id);
         db.giveaways.set(interaction.message.id, giveaway);
         // آپدیت شمارنده شرکت‌کننده‌ها در امبد
-        const msg = await interaction.channel.messages.fetch(interaction.message.id).catch(() => null);
-        if (msg && msg.embeds && msg.embeds[0]) {
-            const oldEmbed = msg.embeds[0];
-            let newDesc = oldEmbed.description || '';
-            if (newDesc.includes('👥 شرکت‌کننده تا این لحظه:')) {
-                newDesc = newDesc.replace(/👥 شرکت‌کننده تا این لحظه: \*\*\d+ نفر\*\*/, `👥 شرکت‌کننده تا این لحظه: **${giveaway.participants.length} نفر**`);
-            } else {
-                newDesc += `\n\n👥 شرکت‌کننده تا این لحظه: **${giveaway.participants.length} نفر**`;
+        try {
+            const msg = await interaction.channel.messages.fetch(interaction.message.id).catch(() => null);
+            if (msg && msg.embeds && msg.embeds[0]) {
+                const oldEmbed = msg.embeds[0];
+                let newDesc = oldEmbed.description || '';
+                if (newDesc.includes('👥 شرکت‌کننده تا این لحظه:')) {
+                    newDesc = newDesc.replace(/👥 شرکت‌کننده تا این لحظه: \*\*\d+ نفر\*\*/, `👥 شرکت‌کننده تا این لحظه: **${giveaway.participants.length} نفر**`);
+                } else {
+                    newDesc += `\n\n👥 شرکت‌کننده تا این لحظه: **${giveaway.participants.length} نفر**`;
+                }
+                const newEmbed = EmbedBuilder.from(oldEmbed).setDescription(newDesc);
+                await msg.edit({ embeds: [newEmbed], components: msg.components });
             }
-            const { EmbedBuilder } = require('discord.js');
-            const newEmbed = EmbedBuilder.from(oldEmbed).setDescription(newDesc);
-            await msg.edit({ embeds: [newEmbed], components: msg.components });
+        } catch (err) {
+            console.error('Error updating giveaway embed:', err);
         }
         await interaction.reply({ content: 'شما با موفقیت در گیووای شرکت کردید! موفق باشید! 🎉', ephemeral: true });
         return;
@@ -69,6 +80,10 @@ async function handleButton(interaction, client, env) {
     console.log(`Checking role button for customId='${interaction.customId}' (startsWith 'rolebtn_': ${interaction.customId ? interaction.customId.startsWith('rolebtn_') : false})`);
     // --- Role Button Handler ---
     if (interaction.customId && interaction.customId.startsWith('rolebtn_')) {
+        // فقط ادمین یا نقش خاص اجازه دارد
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+            return interaction.reply({ content: 'شما اجازه مدیریت رول‌ها را ندارید.', ephemeral: true });
+        }
         const roleId = interaction.customId.split('_')[1];
         const member = await interaction.guild.members.fetch(interaction.user.id);
         const role = interaction.guild.roles.cache.get(roleId);
@@ -77,19 +92,24 @@ async function handleButton(interaction, client, env) {
             return interaction.reply({ embeds: [errorEmbed], flags: 64 });
         }
         let action, color, emoji;
-        if (member.roles.cache.has(roleId)) {
-            await member.roles.remove(roleId);
-            action = '❌ رول برداشته شد';
-            color = 'Red';
-            emoji = '➖';
-        } else {
-            await member.roles.add(roleId);
-            action = '✅ رول اضافه شد';
-            color = 'Green';
-            emoji = '➕';
+        try {
+            if (member.roles.cache.has(roleId)) {
+                await member.roles.remove(roleId);
+                action = '❌ رول برداشته شد';
+                color = 'Red';
+                emoji = '➖';
+            } else {
+                await member.roles.add(roleId);
+                action = '✅ رول اضافه شد';
+                color = 'Green';
+                emoji = '➕';
+            }
+            const embed = new EmbedBuilder().setColor(color).setDescription(`${emoji} ${action}: <@&${roleId}>`);
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+        } catch (err) {
+            console.error('Error handling role button:', err);
+            await interaction.reply({ content: 'خطا در مدیریت رول.', ephemeral: true });
         }
-        const embed = new EmbedBuilder().setColor(color).setDescription(`${emoji} ${action}: <@&${roleId}>`);
-        await interaction.reply({ embeds: [embed], ephemeral: true });
         return;
     }
     const { customId, user, guild, channel } = interaction;
@@ -295,36 +315,42 @@ async function handleButton(interaction, client, env) {
 // --- handleSelectMenu ---
 async function handleSelectMenu(interaction, client, env) {
     if (interaction.customId === 'select_capes') {
+        // فقط ادمین یا نقش خاص اجازه دارد
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return await interaction.reply({ content: 'شما اجازه استفاده از این منو را ندارید.', ephemeral: true });
+        }
         try {
             await interaction.deferReply({ ephemeral: false });
-            // دریافت اطلاعات کاربر و uuid از دستور قبلی (در صورت نیاز می‌توان uuid را در customId یا message ذخیره کرد)
-            // فرض: uuid و username را از message یا interaction.options بگیریم
             const username = interaction.message.embeds[0]?.fields?.find(f => f.name.includes('نام کاربری'))?.value?.replace(/[`>\s]/g, '') || 'Unknown';
-            // اگر uuid را ذخیره نکردی، باید از username دوباره بگیریم
             let uuid = null;
             try {
                 const mojangData = await utils.getMojangData(username);
                 uuid = mojangData?.id;
-            } catch {}
+            } catch (err) {
+                console.error('Error fetching Mojang data:', err);
+            }
             if (!uuid) {
                 return await interaction.editReply({ content: '❌ خطا در دریافت uuid کاربر.', ephemeral: false });
             }
-            // لیست کیپ‌های انتخابی
             const selectedCapes = interaction.values;
-            // اطلاعات هایپیکسل (اختیاری)
             let hypixelStats = {};
             try {
                 hypixelStats = await utils.getHypixelData(uuid, process.env.HYPIXEL_API_KEY);
-            } catch {}
-            // رندر تصویر با کیپ‌های انتخابی
-            const buffer = await utils.createProfileImage({ uuid, username, capeUrls: selectedCapes });
-            // ارسال تصویر به صورت عمومی
-            await interaction.editReply({
-                content: `تصویر پروفایل با کیپ‌های انتخابی برای ${username}:`,
-                files: [{ attachment: buffer, name: 'profile.png' }],
-                embeds: [],
-                components: []
-            });
+            } catch (err) {
+                console.warn('Error fetching Hypixel stats:', err);
+            }
+            try {
+                const buffer = await utils.createProfileImage({ uuid, username, capeUrls: selectedCapes });
+                await interaction.editReply({
+                    content: `تصویر پروفایل با کیپ‌های انتخابی برای ${username}:`,
+                    files: [{ attachment: buffer, name: 'profile.png' }],
+                    embeds: [],
+                    components: []
+                });
+            } catch (imgErr) {
+                console.error('Error creating profile image:', imgErr);
+                await interaction.editReply({ content: '❌ خطا در ساخت تصویر پروفایل.', ephemeral: false });
+            }
         } catch (e) {
             console.error('Error in select_capes handler:', e);
             await interaction.editReply({ content: '❌ خطا در ساخت تصویر پروفایل.', ephemeral: false });
@@ -374,37 +400,36 @@ async function handleModal(interaction, client, env) {
     const { REVIEW_CHANNEL_ID, BUYER_ROLE_ID } = process.env;
 
     if (customId.startsWith('review_comment_modal_')) {
-        const rating = customId.split('_')[3];
-        const comment = fields.getTextInputValue('comment_input');
-        const stars = '⭐'.repeat(parseInt(rating));
-        const reviewChannel = guild.channels.cache.get(REVIEW_CHANNEL_ID);
-
-        if (reviewChannel && reviewChannel.isTextBased()) {
-            const embed = new EmbedBuilder()
-                .setColor('Gold')
-                .setTitle('⭐ نظر جدید ثبت شد ⭐')
-                .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
-                .addFields({ name: 'امتیاز ثبت شده', value: stars, inline: true })
-                .setTimestamp();
-
-            if (comment) embed.addFields({ name: 'نظر کاربر', value: comment, inline: false });
-            await reviewChannel.send({ embeds: [embed] });
-        }
-
-        const successEmbed = new EmbedBuilder().setColor('Green').setDescription('ممنون! نظر و امتیاز شما با موفقیت ثبت شد.');
-        await interaction.reply({ embeds: [successEmbed], flags: 64 });
-
         try {
+            const rating = customId.split('_')[3];
+            const comment = fields.getTextInputValue('comment_input');
+            const stars = '⭐'.repeat(parseInt(rating));
+            const reviewChannel = guild.channels.cache.get(REVIEW_CHANNEL_ID);
+
+            if (reviewChannel && reviewChannel.isTextBased()) {
+                const embed = new EmbedBuilder()
+                    .setColor('Gold')
+                    .setTitle('⭐ نظر جدید ثبت شد ⭐')
+                    .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
+                    .addFields({ name: 'امتیاز ثبت شده', value: stars, inline: true })
+                    .setTimestamp();
+
+                if (comment) embed.addFields({ name: 'نظر کاربر', value: comment, inline: false });
+                await reviewChannel.send({ embeds: [embed] });
+            }
+
+            const successEmbed = new EmbedBuilder().setColor('Green').setDescription('ممنون! نظر و امتیاز شما با موفقیت ثبت شد.');
+            await interaction.reply({ embeds: [successEmbed], flags: 64 });
+
             if (BUYER_ROLE_ID) {
                 const member = await guild.members.fetch(user.id);
                 await member.roles.add(BUYER_ROLE_ID);
-                await logAction(guild, `✅ رول خریدار به ${user.tag} داده شد.`);
             }
         } catch (err) {
-            console.error("Error giving buyer role:", err);
-            await logAction(guild, `❌ خطا در دادن رول خریدار به ${user.tag}.`);
+            console.error('Error handling review modal:', err);
+            await interaction.reply({ content: '❌ خطا در ثبت نظر یا امتیاز.', ephemeral: true });
         }
-        await logAction(guild, `⭐ ${user.tag} امتیاز ${rating} و یک نظر را ثبت کرد.`);
+        return;
     }
 
     if (customId === 'other_reason_modal') {

@@ -86,11 +86,20 @@ function drawGlassCard(ctx, x, y, width, height, options = {}) {
 
 /**
  * Create a modern Hypixel stats image
+ * @param {Object} options - The options for creating the profile image
+ * @param {string} options.uuid - The player's UUID
+ * @param {string} options.username - The player's username
+ * @param {string} options.rank - The player's rank
+ * @param {Object} options.stats - The player's statistics
+ * @param {string[]} [options.capeUrls] - URLs of player's capes
+ * @param {Object} options.guildInfo - The player's guild information
+ * @throws {Error} If required parameters are missing or invalid
  */
 async function createProfileImage({ 
     uuid, 
     username, 
     rank = '', 
+    capeUrls = [],
     stats = {
         achievementPoints: 0,
         karma: 0,
@@ -196,20 +205,47 @@ async function createProfileImage({
         const skinX = 50;  // Left padding
         const skinY = HEIGHT - SKIN_SIZE.height + 20;  // Bottom aligned with some padding
         
-        // Draw the skin with proper dimensions
-        ctx.drawImage(
-            skinImage,
-            skinX,
-            skinY,
-            SKIN_SIZE.width,  // Natural player model width
-            SKIN_SIZE.height  // Full height
-        );
+        // Validate skin image dimensions
+        if (!skinImage.width || !skinImage.height) {
+            throw new Error('Invalid skin image dimensions');
+        }
 
-        // Convert to buffer
-        const buffer = canvas.toBuffer('image/png');
-        const image = await Jimp.read(buffer);
-        
-        return await image.getBufferAsync(Jimp.MIME_PNG);
+        // Draw the skin with proper dimensions and error handling
+        try {
+            ctx.drawImage(
+                skinImage,
+                skinX,
+                skinY,
+                SKIN_SIZE.width,
+                SKIN_SIZE.height
+            );
+
+            // Draw cape if available
+            if (capeUrls && capeUrls.length > 0) {
+                try {
+                    const capeImage = await loadImage(capeUrls[0]);
+                    const CAPE_SIZE = {
+                        width: SKIN_SIZE.width * 0.6,
+                        height: SKIN_SIZE.height * 0.4
+                    };
+                    ctx.drawImage(
+                        capeImage,
+                        skinX + SKIN_SIZE.width * 0.2, // Center the cape
+                        skinY + SKIN_SIZE.height * 0.2,
+                        CAPE_SIZE.width,
+                        CAPE_SIZE.height
+                    );
+                } catch (capeErr) {
+                    console.warn('Failed to load cape:', capeErr.message);
+                    // Continue without cape - non-critical error
+                }
+            }
+
+            // Return buffer directly from canvas without Jimp conversion
+            return canvas.toBuffer('image/png');
+        } catch (drawErr) {
+            throw new Error(`Failed to render player model: ${drawErr.message}`);
+        }
     } catch (err) {
         console.error('Error creating profile image:', err);
         throw err;
