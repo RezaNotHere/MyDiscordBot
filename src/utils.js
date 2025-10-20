@@ -87,17 +87,43 @@ const cache = new Map();
 const CACHE_DURATION = 5 * 60 * 1000;
 
 async function getMojangData(username) {
-    const cacheKey = `mojang-${username}`;
+    if (!username || typeof username !== 'string') {
+        throw new Error('Invalid username provided');
+    }
+
+    const cacheKey = `mojang-${username.toLowerCase()}`;
     const cached = cache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) return cached.data;
+    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+        return cached.data;
+    }
+
     try {
-        const response = await axios.get(`https://api.mojang.com/users/profiles/minecraft/${username}`, { timeout: 10000 });
+        const response = await axios.get(`https://api.mojang.com/users/profiles/minecraft/${username}`, { 
+            timeout: 10000,
+            validateStatus: status => status === 200 || status === 404
+        });
+        
         if (response.data) {
-            cache.set(cacheKey, { data: response.data, timestamp: Date.now() });
+            const data = response.data;
+            cache.set(cacheKey, { data, timestamp: Date.now() });
+            return data;
         }
-        return response.data;
+        return null;
     } catch (error) {
-        if (error.response?.status === 404) return null;
+        if (error.response?.status === 404) {
+            return null;
+        }
+        
+        // Log the error with proper context
+        if (logger) {
+            logger.logError(error, 'MojangAPI', {
+                username,
+                errorType: error.code || 'Unknown',
+                message: error.message
+            });
+        }
+        
+        throw new Error(`Failed to fetch Mojang data: ${error.message}`);
         throw error;
     }
 }
@@ -1022,9 +1048,27 @@ const { createProfileImage } = require('./profileImage');
  */
 async function sendProfileImageEmbed(interaction, uuid, capeUrls, hypixelStats) {
     try {
-        // Extract username and rank if available
-        const username = interaction.options.getString('username') || 'Unknown';
-        const rank = interaction.options.getString('rank') || '';
+        // Extract username and rank if available. interaction may be a message or an interaction without options.
+        let username = 'Unknown';
+        let rank = '';
+        try {
+            if (interaction?.options && typeof interaction.options.getString === 'function') {
+                username = interaction.options.getString('username') || username;
+                rank = interaction.options.getString('rank') || rank;
+            }
+        } catch (e) {
+            // ignore and fallback
+        }
+
+        // If username not provided, try to fetch from Mojang using uuid
+        if ((!username || username === 'Unknown') && uuid) {
+            try {
+                const mojang = await getMojangData ? await getMojangData(uuid) : null;
+                if (mojang && mojang.name) username = mojang.name || mojang.username || username;
+            } catch (e) {
+                // ignore lookup failures
+            }
+        }
         // Flatten stats for new image (combine Bedwars/SkyWars if present)
         let stats = {};
         if (hypixelStats && typeof hypixelStats === 'object') {
@@ -1099,11 +1143,26 @@ async function sendProfileImageEmbed(interaction, uuid, capeUrls, hypixelStats) 
         });
     } catch (e) {
         console.error('Error sending profile image embed:', e);
-        await interaction.editReply({ content: '❌ خطا در ساخت تصویر پروفایل.', embeds: [], files: [] });
+        const errorEmbed = new EmbedBuilder()
+            .setColor('Red')
+            .setTitle('❌ خطا')
+            .setDescription('خطا در ساخت تصویر پروفایل.')
+            .setFooter({ text: 'لطفاً مجدداً تلاش کنید' })
+            .setTimestamp();
+        await interaction.editReply({ embeds: [errorEmbed], files: [] });
     }
+}
+
+module.exports = {
     createCosmeticEmbed,
     sendProfileImageEmbed,
     getNameHistory, // اضافه کردن تابع تاریخچه نام‌ها
+    // Profile and Mojang API
+    createProfileImage,
+    getMojangData,
+    getMinecraftProfile,
+    getHypixelData,
+    getGameStats,
     // Bad words management
     addBadWord,
     removeBadWord,
@@ -1112,5 +1171,14 @@ async function sendProfileImageEmbed(interaction, uuid, capeUrls, hypixelStats) 
     // Warning system
     addWarning,
     clearWarnings,
-    getWarnings
+    getWarnings,
+    // Client and logger
+    setClient,
+    setLogger,
+    // Discord commands and shop
+    registerCommands,
+    updateShopStatus,
+    // Utils
+    checkGiveaways,
+    checkPolls
 };

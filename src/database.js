@@ -18,19 +18,23 @@ class SecureEnmap extends Enmap {
     // Decrypt value after getting
     get(key) {
         const encryptedValue = super.get(key);
-        if (encryptedValue) {
-            try {
-                const decryptedValue = decrypt(encryptedValue);
-                // We parse the JSON string back into its original form.
-                return JSON.parse(decryptedValue);
-            } catch (e) {
-                // This could happen if the data is not valid JSON or not encrypted.
-                // It might be unencrypted legacy data, so we return it as is.
-                console.warn(`[DB] Could not decrypt or parse value for key '${key}'. Returning raw value.`, e);
-                return encryptedValue;
+        if (!encryptedValue) return null;
+        
+        try {
+            const decryptedValue = decrypt(encryptedValue);
+            // We parse the JSON string back into its original form.
+            return JSON.parse(decryptedValue);
+        } catch (e) {
+            // Log the error properly
+            if (this.logger) {
+                this.logger.logError(e, 'Database', {
+                    operation: 'get',
+                    key: key,
+                    errorType: e instanceof SyntaxError ? 'JSON Parse Error' : 'Decryption Error'
+                });
             }
+            throw new Error(`Failed to retrieve data for key '${key}'`);
         }
-        return undefined;
     }
 }
 

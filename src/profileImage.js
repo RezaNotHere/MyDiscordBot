@@ -1,250 +1,217 @@
-
-// Modern /mcinfo profile image generator with custom fonts and effects
 const Jimp = require('jimp');
+const { createCanvas, loadImage } = require('canvas');
 const axios = require('axios');
 const path = require('path');
 
-// Font paths
-const FONT_MINECRAFTIA = path.join(__dirname, '../assets/fonts/Minecraftia.ttf');
-const FONT_MONTSERRAT = path.join(__dirname, '../assets/fonts/Montserrat-Bold.ttf');
+// Minecraft rank colors
+const RANK_COLORS = {
+    'MVP+': { primary: '#55FFFF', shadow: '#3EC6C6' },
+    'MVP++': { primary: '#FF55FF', shadow: '#C646C6' },
+    'MVP': { primary: '#55FFFF', shadow: '#3EC6C6' },
+    'VIP+': { primary: '#55FF55', shadow: '#4ACC4A' },
+    'VIP': { primary: '#55FF55', shadow: '#4ACC4A' },
+    'Default': { primary: '#AAAAAA', shadow: '#8A8A8A' }
+};
 
-// Helper: load TTF font for Jimp
-async function loadFontTTF(fontPath, size = 32) {
-    // Use jimp's built-in font loader for TTF via @jimp/plugin-print (if available)
-    // Otherwise, fallback to default Jimp fonts
-    // For best results, use jimp@0.22+ and @jimp/plugin-print
-    try {
-        const { loadFont } = require('@jimp/plugin-print');
-        return await loadFont({
-            fontFile: fontPath,
-            size,
-        });
-    } catch {
-        // fallback: use built-in Jimp font
-        return Jimp.FONT_SANS_32_WHITE;
+// Glass card styling
+const GLASS_CARD = {
+    background: 'rgba(0, 0, 0, 0.5)',
+    border: 'rgba(255, 255, 255, 0.1)',
+    shadowColor: 'rgba(0, 0, 0, 0.8)',
+    blur: 10,
+    borderRadius: 12
+};
+
+/**
+ * Creates a glowing background effect
+ */
+function createGlowingBackground(ctx, width, height) {
+    // Base gradient
+    const baseGradient = ctx.createLinearGradient(0, 0, width, height);
+    baseGradient.addColorStop(0, '#150F1F');
+    baseGradient.addColorStop(0.7, '#1F1836');
+    baseGradient.addColorStop(1, '#191428');
+    ctx.fillStyle = baseGradient;
+    ctx.fillRect(0, 0, width, height);
+
+    // Top glow effect
+    const glowGradient = ctx.createRadialGradient(
+        width / 2, -100, 0,
+        width / 2, -100, 800
+    );
+    glowGradient.addColorStop(0, 'rgba(88, 65, 154, 0.3)');
+    glowGradient.addColorStop(1, 'rgba(88, 65, 154, 0)');
+    ctx.fillStyle = glowGradient;
+    ctx.fillRect(0, 0, width, height);
+
+    // Subtle noise pattern
+    for (let x = 0; x < width; x += 2) {
+        for (let y = 0; y < height; y += 2) {
+            if (Math.random() > 0.996) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.04})`;
+                ctx.fillRect(x, y, 2, 2);
+            }
+        }
     }
 }
 
 /**
- * Create a modern Minecraft profile image with skin, username, rank, stats, and capes
- * @param {object} options
- * @param {string} options.uuid - Player UUID
- * @param {string} options.username - Player username
- * @param {string} [options.rank] - Player rank (optional)
- * @param {object} [options.stats] - Hypixel stats (optional)
- * @param {string[]} [options.capeUrls] - Array of cape image URLs
- * @returns {Promise<Buffer>} PNG buffer
+ * Creates a glass card effect
  */
-async function createProfileImage({ uuid, username, rank = '', stats = {}, capeUrls = [] }) {
+function drawGlassCard(ctx, x, y, width, height, options = {}) {
+    const settings = { ...GLASS_CARD, ...options };
+    
+    // Card shadow
+    ctx.save();
+    ctx.shadowColor = settings.shadowColor;
+    ctx.shadowBlur = settings.blur;
+    ctx.fillStyle = settings.background;
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, settings.borderRadius);
+    ctx.fill();
+
+    // Card border
+    ctx.strokeStyle = settings.border;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    // Inner light effect
+    const gradient = ctx.createLinearGradient(x, y, x, y + height);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.restore();
+}
+
+/**
+ * Create a modern Hypixel stats image
+ */
+async function createProfileImage({ 
+    uuid, 
+    username, 
+    rank = '', 
+    stats = {
+        achievementPoints: 0,
+        karma: 0,
+        questsCompleted: 0,
+        ranksGifted: 0,
+        level: 0
+    }, 
+    guildInfo = {
+        name: 'None',
+        level: 0,
+        members: 0,
+        joined: 'Never'
+    } 
+}) {
     try {
-        // --- Layout constants ---
-        const WIDTH = 900;
-        const HEIGHT = 420;
-        const PADDING = 32;
-        const SKIN_SIZE = 256;
-        const CAPE_SIZE = 80;
-        const CAPES_PER_ROW = 4;
-        const CAPES_ROWS = 2;
-        const CAPE_FRAME = 12;
-        const STATS_BOX_W = 340;
-        const STATS_BOX_H = 120;
+        if (!uuid) throw new Error('UUID is required');
+        if (!username) username = 'Unknown';
 
-        // --- Load fonts ---
-        // For best quality, use @jimp/plugin-print for TTF. Otherwise, fallback to built-in.
-        let fontUsername, fontStats;
-        try {
-            fontUsername = await Jimp.loadFont(FONT_MINECRAFTIA);
-        } catch {
-            fontUsername = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
-        }
-        try {
-            fontStats = await Jimp.loadFont(FONT_MONTSERRAT);
-        } catch {
-            fontStats = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
-        }
+        // Canvas setup
+        const WIDTH = 1100;
+        const HEIGHT = 480;
+        const canvas = createCanvas(WIDTH, HEIGHT);
+        const ctx = canvas.getContext('2d');
+        ctx.textBaseline = 'middle';  // Better text alignment
 
-        // --- Background: gradient + blur + glassmorphism ---
-        const bg = new Jimp(WIDTH, HEIGHT, 0x23272eff);
-        // Horizontal gradient
-        for (let x = 0; x < WIDTH; x++) {
-            const r = 35 + Math.floor(40 * x / WIDTH);
-            const g = 39 + Math.floor(40 * x / WIDTH);
-            const b = 46 + Math.floor(80 * x / WIDTH);
-            const color = Jimp.rgbaToInt(r, g, b, 255);
-            for (let y = 0; y < HEIGHT; y++) {
-                bg.setPixelColor(color, x, y);
-            }
-        }
-        // Blur for glass effect
-        bg.blur(2);
+        // Create background
+        createGlowingBackground(ctx, WIDTH, HEIGHT);
 
-        // --- Skin: left, with shadow and rainbow glow ---
-        const skinUrl = `https://mc-heads.net/body/${uuid}/right?size=${SKIN_SIZE}`;
-        const skinResp = await axios.get(skinUrl, { responseType: 'arraybuffer' });
-        const skin = await Jimp.read(skinResp.data);
-        // Shadow
-        const shadow = new Jimp(SKIN_SIZE + 40, SKIN_SIZE + 40, 0x00000000);
-        shadow.scan(0, 0, shadow.bitmap.width, shadow.bitmap.height, function(x, y, idx) {
-            const dx = x - shadow.bitmap.width / 2;
-            const dy = y - shadow.bitmap.height / 2;
-            const dist = Math.sqrt(dx * dx + (dy * 0.7) * (dy * 0.7));
-            if (dist < SKIN_SIZE / 2 + 30) {
-                this.bitmap.data[idx + 3] = Math.max(0, 90 - dist * 1.1);
-            }
+        // Draw title
+        ctx.font = 'bold 32px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText('Hypixel Stats', WIDTH / 2, 45);
+
+        // Draw stat cards
+        const CARD_MARGIN = 20;
+        const CARD_WIDTH = 380;
+        const CARD_HEIGHT = 200;
+        const CARDS_X = WIDTH - CARD_WIDTH - 30; // Right side of the image
+        
+        // GENERAL card
+        drawGlassCard(ctx, CARDS_X, 70, CARD_WIDTH, CARD_HEIGHT);
+        ctx.font = 'bold 24px Arial';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textAlign = 'left';
+        ctx.fillText('GENERAL', CARDS_X + 20, 100);
+
+        // Add general stats
+        ctx.font = '20px Arial';
+        let yPos = 135;
+        const statSpacing = 30;
+        const statPairs = [
+            ['Achievement Points', stats.achievementPoints || '0'],
+            ['Karma', (stats.karma || 0).toLocaleString()],
+            ['Quests Completed', stats.questsCompleted || '0'],
+            ['Ranks Gifted', stats.ranksGifted || '0']
+        ];
+
+        statPairs.forEach(([label, value]) => {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.fillText(label, CARDS_X + 20, yPos);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.textAlign = 'right';
+            ctx.fillText(value, CARDS_X + CARD_WIDTH - 20, yPos);
+            ctx.textAlign = 'left';
+            yPos += statSpacing;
         });
-        bg.composite(shadow, PADDING - 20, (HEIGHT - SKIN_SIZE) / 2 - 20, { mode: Jimp.BLEND_SOURCE_OVER });
-        // Rainbow glow
-        const glow = new Jimp(SKIN_SIZE + 32, SKIN_SIZE + 32, 0x00000000);
-        for (let i = 0; i < glow.bitmap.width; i++) {
-            for (let j = 0; j < glow.bitmap.height; j++) {
-                const dx = i - glow.bitmap.width / 2;
-                const dy = j - glow.bitmap.height / 2;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > SKIN_SIZE / 2 && dist < SKIN_SIZE / 2 + 16) {
-                    // Rainbow hue
-                    const hue = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360;
-                    const rgb = hslToRgb(hue / 360, 1, 0.6);
-                    const alpha = Math.max(0, 80 - (dist - SKIN_SIZE / 2) * 5);
-                    const idx = glow.getPixelIndex(i, j);
-                    glow.bitmap.data[idx + 0] = rgb[0];
-                    glow.bitmap.data[idx + 1] = rgb[1];
-                    glow.bitmap.data[idx + 2] = rgb[2];
-                    glow.bitmap.data[idx + 3] = alpha;
-                }
-            }
-        }
-        glow.blur(8);
-        bg.composite(glow, PADDING - 16, (HEIGHT - SKIN_SIZE) / 2 - 16, { mode: Jimp.BLEND_SOURCE_OVER });
-        // Skin
-        bg.composite(skin, PADDING, (HEIGHT - SKIN_SIZE) / 2, { mode: Jimp.BLEND_SOURCE_OVER });
 
-        // --- Helper: HSL to RGB for rainbow glow ---
-        function hslToRgb(h, s, l) {
-            let r, g, b;
-            if (s === 0) {
-                r = g = b = l;
-            } else {
-                const hue2rgb = (p, q, t) => {
-                    if (t < 0) t += 1;
-                    if (t > 1) t -= 1;
-                    if (t < 1/6) return p + (q - p) * 6 * t;
-                    if (t < 1/2) return q;
-                    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-                    return p;
-                };
-                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-                const p = 2 * l - q;
-                r = hue2rgb(p, q, h + 1/3);
-                g = hue2rgb(p, q, h);
-                b = hue2rgb(p, q, h - 1/3);
-            }
-            return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
-        }
+        // GUILD card
+        drawGlassCard(ctx, CARDS_X, 290, CARD_WIDTH, CARD_HEIGHT);
+        ctx.font = 'bold 24px Arial';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText('GUILD', CARDS_X + 20, 320);
 
-        // --- Username & rank: top center ---
-        const nameText = rank ? `[${rank}] ${username}` : username;
-        // Draw username with Minecraftia font, shadowed
-        const nameX = SKIN_SIZE + PADDING * 2 + 10;
-        const nameY = PADDING;
-        // Shadow
-        const nameShadow = new Jimp(500, 48, 0x00000000);
-        nameShadow.print(fontUsername, 2, 2, nameText);
-        nameShadow.blur(2);
-        bg.composite(nameShadow, nameX, nameY);
-        // Main text
-        bg.print(fontUsername, nameX, nameY, {
-            text: nameText,
-            alignmentX: Jimp.HORIZONTAL_ALIGN_LEFT,
-            alignmentY: Jimp.VERTICAL_ALIGN_TOP
-        }, 500, 48);
+        // Add guild stats
+        yPos = 355;
+        const guildPairs = [
+            ['Name', guildInfo.name || 'None'],
+            ['Level', guildInfo.level || '0'],
+            ['Members', guildInfo.members || '0'],
+            ['Joined', guildInfo.joined || 'Never']
+        ];
 
-        // --- Stats box: glassmorphism center + Hypixel logo badge ---
-        const statsBoxX = SKIN_SIZE + PADDING * 2 + 10;
-        const statsBoxY = nameY + 56;
-        const statsBox = new Jimp(STATS_BOX_W, STATS_BOX_H, 0xffffff33);
-        statsBox.blur(2);
-        // Border-radius (manual, for glass card)
-        const radius = 24;
-        statsBox.scan(0, 0, STATS_BOX_W, STATS_BOX_H, function(x, y, idx) {
-            // Soft border
-            if (x < 4 || x > STATS_BOX_W - 5 || y < 4 || y > STATS_BOX_H - 5) {
-                this.bitmap.data[idx + 3] = 80;
-            }
-            // Rounded corners
-            if ((x < radius && y < radius && Math.hypot(x - radius, y - radius) > radius) ||
-                (x > STATS_BOX_W - radius && y < radius && Math.hypot(x - (STATS_BOX_W - radius), y - radius) > radius) ||
-                (x < radius && y > STATS_BOX_H - radius && Math.hypot(x - radius, y - (STATS_BOX_H - radius)) > radius) ||
-                (x > STATS_BOX_W - radius && y > STATS_BOX_H - radius && Math.hypot(x - (STATS_BOX_W - radius), y - (STATS_BOX_H - radius)) > radius)) {
-                this.bitmap.data[idx + 3] = 0;
-            }
+        guildPairs.forEach(([label, value]) => {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.fillText(label, CARDS_X + 20, yPos);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.textAlign = 'right';
+            ctx.fillText(value, CARDS_X + CARD_WIDTH - 20, yPos);
+            ctx.textAlign = 'left';
+            yPos += statSpacing;
         });
-        // Stats text
-        let statsText = '';
-        if (stats && Object.keys(stats).length > 0) {
-            for (const [key, value] of Object.entries(stats)) {
-                statsText += `${key}: ${value}\n`;
-            }
-        } else {
-            statsText = 'No Hypixel stats';
-        }
-        statsBox.print(fontStats, 56, 16, {
-            text: statsText,
-            alignmentX: Jimp.HORIZONTAL_ALIGN_LEFT,
-            alignmentY: Jimp.VERTICAL_ALIGN_TOP
-        }, STATS_BOX_W - 72, STATS_BOX_H - 32);
-        // Hypixel logo badge (top-left of stats box)
-        try {
-            const hypixelLogo = await Jimp.read(path.join(__dirname, '../assets/HypixelLogo.png'));
-            hypixelLogo.resize(32, 32).opacity(0.92);
-            // Glassy circle behind logo
-            const badge = new Jimp(40, 40, 0xffffff66);
-            badge.blur(2);
-            statsBox.composite(badge, 8, 8);
-            statsBox.composite(hypixelLogo, 12, 12);
-        } catch {}
-        bg.composite(statsBox, statsBoxX, statsBoxY);
 
-        // --- Capes: below stats, modern frames ---
-        const capesStartX = statsBoxX;
-        const capesStartY = statsBoxY + STATS_BOX_H + 32;
-        let capeImages = [];
-        for (const url of capeUrls.slice(0, CAPES_PER_ROW * CAPES_ROWS)) {
-            try {
-                const resp = await axios.get(url, { responseType: 'arraybuffer' });
-                let img = await Jimp.read(resp.data);
-                img.resize(CAPE_SIZE, CAPE_SIZE);
-                capeImages.push(img);
-            } catch (e) {
-                // skip failed cape
-            }
-        }
-        for (let i = 0; i < capeImages.length; i++) {
-            const row = Math.floor(i / CAPES_PER_ROW);
-            const col = i % CAPES_PER_ROW;
-            const x = capesStartX + col * (CAPE_SIZE + CAPE_FRAME + 8);
-            const y = capesStartY + row * (CAPE_SIZE + CAPE_FRAME + 8);
-            // Frame: glassy, soft border
-            const frame = new Jimp(CAPE_SIZE + CAPE_FRAME, CAPE_SIZE + CAPE_FRAME, 0xffffff55);
-            frame.blur(1);
-            frame.scan(0, 0, frame.bitmap.width, frame.bitmap.height, function(x, y, idx) {
-                if (x < 3 || x > frame.bitmap.width - 4 || y < 3 || y > frame.bitmap.height - 4) {
-                    this.bitmap.data[idx + 3] = 80;
-                }
-            });
-            frame.composite(capeImages[i], CAPE_FRAME / 2, CAPE_FRAME / 2);
-            bg.composite(frame, x, y);
-        }
-        if (capeImages.length === 0) {
-            // Show placeholder if no capes
-            const noCape = new Jimp(CAPE_SIZE * 2 + CAPE_FRAME * 2 + 8, CAPE_SIZE + CAPE_FRAME, 0x00000055);
-            noCape.print(fontStats, 12, 18, 'No Capes Found');
-            bg.composite(noCape, capesStartX, capesStartY);
-        }
+        // Player skin with proper proportions
+        const SKIN_SIZE = {
+            height: 340,
+            width: 340 * 0.8  // Maintain proper player model proportions
+        };
+        const skinUrl = `https://crafatar.com/renders/body/${uuid}?overlay=true&scale=10`;
+        const skinImage = await loadImage(skinUrl);
 
-        // --- Final: return PNG buffer ---
-        return await bg.getBufferAsync(Jimp.MIME_PNG);
+        // Calculate position to align skin properly
+        const skinX = 50;  // Left padding
+        const skinY = HEIGHT - SKIN_SIZE.height + 20;  // Bottom aligned with some padding
+        
+        // Draw the skin with proper dimensions
+        ctx.drawImage(
+            skinImage,
+            skinX,
+            skinY,
+            SKIN_SIZE.width,  // Natural player model width
+            SKIN_SIZE.height  // Full height
+        );
+
+        // Convert to buffer
+        const buffer = canvas.toBuffer('image/png');
+        const image = await Jimp.read(buffer);
+        
+        return await image.getBufferAsync(Jimp.MIME_PNG);
     } catch (err) {
-        console.error('Error creating modern profile image:', err);
+        console.error('Error creating profile image:', err);
         throw err;
     }
 }
