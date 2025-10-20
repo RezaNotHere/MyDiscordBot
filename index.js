@@ -40,20 +40,24 @@ commands.setLogger(logger);
 
 
 client.once(Events.ClientReady, async (readyClient) => {
-    if (events.onReady) await events.onReady(readyClient);
     try {
+        if (events.onReady) await events.onReady(readyClient);
+        
+        // Validate required environment variables
+        if (!env.CLIENT_ID || !env.GUILD_ID || !env.TOKEN) {
+            throw new Error('Missing required environment variables (CLIENT_ID, GUILD_ID, or TOKEN)');
+        }
+        
         await utils.registerCommands(env.CLIENT_ID, env.GUILD_ID, env.TOKEN);
+        
+        // Set up periodic giveaway checks with proper error handling
+        setTimeout(() => {
+            utils.checkGiveaways().catch(error => {
+                logger.logError(error, 'GiveawayCheck');
+            });
+        }, 5000); // 5 second delay
     } catch (error) {
-        console.error('Failed to register commands:', error);
-    }
-       setTimeout(() => {
-        utils.checkGiveaways();
-        utils.checkPolls();
-    }, 5000)
-
-    if (readyClient.guilds.cache.size > 0) {
-        const guild = readyClient.guilds.cache.first();
-        utils.updateShopStatus(readyClient, guild);
+        logger.logError(error, 'ClientReady');
     }
 });
 
